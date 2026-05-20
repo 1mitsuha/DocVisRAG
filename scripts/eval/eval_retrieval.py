@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.docvisrag.eval import mrr, ndcg_at_k, recall_at_k
-from src.docvisrag.retrieve import HybridPageIndex, VisualPageIndex, reciprocal_rank_fusion
+from src.docvisrag.retrieve import HybridPageIndex, TextIndex, VisualPageIndex, reciprocal_rank_fusion
 
 
 def _load_questions(path: str) -> List[Dict[str, Any]]:
@@ -64,8 +64,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--retriever-type",
         default="hybrid",
-        choices=["hybrid", "visual", "fusion"],
-        help="Retriever type for evaluation.",
+        choices=["hybrid", "visual", "fusion", "text"],
+        help="Retriever type for evaluation: hybrid/visual/fusion/text.",
     )
     parser.add_argument(
         "--visual-index-dir",
@@ -85,9 +85,12 @@ def main() -> int:
         retriever_type = (args.retriever_type or "hybrid").strip().lower()
         hybrid = HybridPageIndex.load(args.index_dir) if retriever_type in {"hybrid", "fusion"} else None
         visual = None
+        text_index = None
         if retriever_type in {"visual", "fusion"}:
             visual_dir = _resolve_visual_index_dir(args.index_dir, args.visual_index_dir)
             visual = VisualPageIndex.load(visual_dir)
+        if retriever_type == "text":
+            text_index = TextIndex.load(args.index_dir)
     except Exception as exc:  # noqa: BLE001
         print(f"[ERROR] Init retrieval evaluation failed: {exc}")
         return 1
@@ -117,6 +120,17 @@ def main() -> int:
             elif retriever_type == "visual":
                 assert visual is not None
                 results = visual.search(question, top_k=max(5, args.top_k))
+            elif retriever_type == "text":
+                assert text_index is not None
+                chunks = text_index.search(question, top_k=max(5, args.top_k))
+                # deduplicate page indices from text chunks
+                seen_pages: set = set()
+                results = []
+                for c in chunks:
+                    page = int(c.get("page_index", -1))
+                    if page > 0 and page not in seen_pages:
+                        seen_pages.add(page)
+                        results.append({"page_index": page, "score": c.get("score", 0.0)})
             else:
                 assert hybrid is not None and visual is not None
                 h = hybrid.search(question, top_k=max(10, args.top_k * 2))

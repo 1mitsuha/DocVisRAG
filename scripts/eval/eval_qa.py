@@ -13,7 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.docvisrag.eval import citation_accuracy, exact_match, recall_at_k, simple_anls, token_f1
-from src.docvisrag.qa import DocQAEngine
+from src.docvisrag.qa import DocQAEngine, TextDocQAEngine
 
 
 def _load_questions(path: str) -> List[Dict[str, Any]]:
@@ -65,8 +65,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--retriever-type",
         default="hybrid",
-        choices=["hybrid", "visual", "fusion"],
-        help="Retriever type for DocQA.",
+        choices=["hybrid", "visual", "fusion", "text"],
+        help="Retriever type for DocQA: hybrid/visual/fusion/text.",
     )
     parser.add_argument(
         "--visual-index-dir",
@@ -99,17 +99,25 @@ def main() -> int:
         return 1
 
     try:
-        engine = DocQAEngine(
-            index_dir=args.index_dir,
-            model_id=args.model_id,
-            top_k=args.top_k,
-            load_in_4bit=args.load_in_4bit,
-            retriever_type=args.retriever_type,
-            visual_index_dir=args.visual_index_dir,
-        )
+        if args.retriever_type == "text":
+            engine = TextDocQAEngine(
+                index_dir=args.index_dir,
+                model_id=args.model_id,
+                top_k=args.top_k,
+                load_in_4bit=args.load_in_4bit,
+            )
+        else:
+            engine = DocQAEngine(
+                index_dir=args.index_dir,
+                model_id=args.model_id,
+                top_k=args.top_k,
+                load_in_4bit=args.load_in_4bit,
+                retriever_type=args.retriever_type,
+                visual_index_dir=args.visual_index_dir,
+            )
         engine.max_new_tokens = args.max_new_tokens
     except Exception as exc:  # noqa: BLE001
-        print(f"[ERROR] Failed to initialize DocQAEngine: {exc}")
+        print(f"[ERROR] Failed to initialize QA engine: {exc}")
         return 1
 
     out_path = Path(args.out)
